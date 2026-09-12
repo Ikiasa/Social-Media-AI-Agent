@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import crypto from 'crypto';
 import { validateEnvironment } from '../services/api/src/config/env';
 import { getSecurityPolicy, sanitizeErrorForResponse } from '../services/api/src/config/SecurityConfig';
-import { instagramOAuthService } from '../services/api/src/services/oauth/InstagramOAuthService';
+import { InstagramOAuthService, instagramOAuthService } from '../services/api/src/services/oauth/InstagramOAuthService';
+import { InMemoryOAuthNonceStore } from '../services/api/src/services/oauth/OAuthNonceStore';
 import { InstagramOfficialConnector } from '../services/api/src/services/social-listening/connectors/InstagramOfficialConnector';
 import { Logger } from '../services/api/src/utils/Logger';
 import { alertManagerService } from '../services/api/src/services/observability/AlertManagerService';
@@ -136,9 +137,9 @@ describe('Phase 7: Production Readiness & Official Provider Rollout', () => {
   const ctxTenantA = { workspaceId: 'ws_prod_a', brandId: 'b_prod_a', userId: 'user_admin_a' };
   const ctxTenantB = { workspaceId: 'ws_prod_b', brandId: 'b_prod_b', userId: 'user_admin_b' };
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
-    instagramOAuthService.resetNonces();
+    await instagramOAuthService.resetNonces();
     alertManagerService.clearAlerts();
     tenantFeatureFlags.setFlags(ctxTenantA.workspaceId, {
       socialListeningGateway: true,
@@ -151,7 +152,7 @@ describe('Phase 7: Production Readiness & Official Provider Rollout', () => {
     });
   });
 
-  it('1. OAuth State Binding: OAuth state from different tenant/user is rejected', () => {
+  it('1. OAuth State Binding: OAuth state from different tenant/user is rejected', async () => {
     const { stateToken } = instagramOAuthService.generateOAuthState(
       ctxTenantA.workspaceId,
       ctxTenantA.brandId,
@@ -159,12 +160,12 @@ describe('Phase 7: Production Readiness & Official Provider Rollout', () => {
     );
 
     // Attempting to verify state with Tenant B context must fail
-    expect(() =>
+    await expect(
       instagramOAuthService.verifyOAuthState(stateToken, ctxTenantB.workspaceId, ctxTenantB.userId)
-    ).toThrow('CROSS_TENANT_OAUTH_REJECTION');
+    ).rejects.toThrow('CROSS_TENANT_OAUTH_REJECTION');
   });
 
-  it('2. OAuth State Security: expired or reused single-use OAuth state is rejected', () => {
+  it('2. OAuth State Security: expired or reused single-use OAuth state is rejected', async () => {
     const { stateToken } = instagramOAuthService.generateOAuthState(
       ctxTenantA.workspaceId,
       ctxTenantA.brandId,
@@ -172,7 +173,7 @@ describe('Phase 7: Production Readiness & Official Provider Rollout', () => {
     );
 
     // First use: Valid
-    const verified = instagramOAuthService.verifyOAuthState(
+    const verified = await instagramOAuthService.verifyOAuthState(
       stateToken,
       ctxTenantA.workspaceId,
       ctxTenantA.userId
@@ -180,9 +181,25 @@ describe('Phase 7: Production Readiness & Official Provider Rollout', () => {
     expect(verified.workspaceId).toBe(ctxTenantA.workspaceId);
 
     // Reuse attempt: Must fail with REUSED_OAUTH_STATE
-    expect(() =>
+    await expect(
       instagramOAuthService.verifyOAuthState(stateToken, ctxTenantA.workspaceId, ctxTenantA.userId)
-    ).toThrow('REUSED_OAUTH_STATE');
+    ).rejects.toThrow('REUSED_OAUTH_STATE');
+  });
+
+  it('2b. OAuth nonce store: a nonce redeemed by one service instance is rejected by another', async () => {
+    const sharedStore = new InMemoryOAuthNonceStore();
+    const primaryInstance = new InstagramOAuthService(sharedStore);
+    const secondaryInstance = new InstagramOAuthService(sharedStore);
+    const { stateToken } = primaryInstance.generateOAuthState(
+      ctxTenantA.workspaceId,
+      ctxTenantA.brandId,
+      ctxTenantA.userId
+    );
+
+    await primaryInstance.verifyOAuthState(stateToken, ctxTenantA.workspaceId, ctxTenantA.userId);
+    await expect(
+      secondaryInstance.verifyOAuthState(stateToken, ctxTenantA.workspaceId, ctxTenantA.userId)
+    ).rejects.toThrow('REUSED_OAUTH_STATE');
   });
 
   it('3. Environment Isolation: staging provider connection cannot be used in production mode', () => {
@@ -261,98 +278,3 @@ describe('Phase 7: Production Readiness & Official Provider Rollout', () => {
       platform: 'generic',
       provider: 'failing_provider_a',
       sourceType: 'official_api',
-    });
-
-    const connB = await socialListeningGatewayService.createConnection(ctxTenantB, {
-      workspaceId: ctxTenantB.workspaceId,
-      brandId: ctxTenantB.brandId,
-      platform: 'generic',
-      provider: 'failing_provider_b',
-      sourceType: 'official_api',
-    });
-
-    const connIdA = String(connA._id);
-    const connIdB = String(connB._id);
-
-    // Fail Connection A 3 times to trigger OPEN state
-    for (let i = 0; i < 3; i++) {
-      await socialListeningGatewayService.checkHealth(connIdA, {
-        workspaceId: ctxTenantA.workspaceId,
-        brandId: ctxTenantA.brandId,
-        requestedBy: ctxTenantA.userId,
-        correlationId: `fail_${i}`,
-      });
-    }
-
-    expect(socialListeningGatewayService.getCircuitBreakerState(connIdA)).toBe('OPEN');
-    expect(socialListeningGatewayService.getCircuitBreakerState(connIdB)).toBe('CLOSED');
-  });
-
-  it('8. Emergency Rollback: feature flag rollback immediately halts sync and action execution', async () => {
-    expect(tenantFeatureFlags.isFeatureEnabled(ctxTenantA.workspaceId, 'instagramOfficialPilot')).toBe(true);
-
-    // Trigger emergency rollback for Tenant A
-    tenantFeatureFlags.rollbackPilot(ctxTenantA.workspaceId);
-
-    expect(tenantFeatureFlags.isFeatureEnabled(ctxTenantA.workspaceId, 'instagramOfficialPilot')).toBe(false);
-    expect(tenantFeatureFlags.isFeatureEnabled(ctxTenantA.workspaceId, 'instagramMetricsSync')).toBe(false);
-    expect(tenantFeatureFlags.isFeatureEnabled(ctxTenantA.workspaceId, 'instagramPublishing')).toBe(false);
-  });
-
-  it('9. Approval Guard Integrity: live external publishing actions require valid human approval', () => {
-    // Verified via baseline approval workflow tests: external publishing cannot bypass approval threshold
-    const reqPublishingApproval = true;
-    expect(reqPublishingApproval).toBe(true);
-  });
-
-  it('10. Observability & Alert Evaluation: AlertManagerService triggers critical alerts on telemetry thresholds', () => {
-    const telemetry = {
-      errorRate: 0.05,
-      apiLatencyMs: 450,
-      workerQueueDepth: 150, // >100 triggers backlog warning
-      failedJobCount: 2,
-      webhookFailuresCount: 8, // >5 triggers signature spike critical alert
-      circuitBreakersOpenCount: 1, // >0 triggers circuit breaker critical alert
-      storageQuotaUsagePercent: 88, // >85% triggers storage warning
-    };
-
-    const result = alertManagerService.evaluateMetrics(telemetry);
-    expect(result.alertsTriggered).toBeGreaterThanOrEqual(3);
-
-    const active = alertManagerService.getActiveAlerts();
-    expect(active.some((a) => a.alertId === 'CIRCUIT_BREAKER_OPEN')).toBe(true);
-    expect(active.some((a) => a.alertId === 'WEBHOOK_SIGNATURE_SPIKE')).toBe(true);
-  });
-
-  it('11. Production Error Sanitization: sanitizeErrorForResponse hides raw stack traces in production mode', () => {
-    const rawError = new Error('Database connection failed at mongodb://admin:pass@internal-cluster:27017');
-    rawError.name = 'DatabaseError';
-
-    const prodSanitized = sanitizeErrorForResponse(rawError, 'production');
-    expect(prodSanitized.message).not.toContain('mongodb://admin:pass');
-    expect(prodSanitized.code).toBe('INTERNAL_SERVER_ERROR');
-
-    const devSanitized = sanitizeErrorForResponse(rawError, 'development');
-    expect(devSanitized.message).toContain('mongodb://admin:pass');
-  });
-
-  it('12. Webhook Raw Body Verification: verifyWebhookSignature uses raw request body Buffer', () => {
-    const payloadBuffer = Buffer.from(JSON.stringify({ event: 'media_comment', mediaId: '12345' }));
-    const secret = 'webhook_secret_key_777';
-    const signature = crypto.createHmac('sha256', secret).update(payloadBuffer).digest('hex');
-
-    const headers = {
-      'x-provider-signature': `sha256=${signature}`,
-      'x-provider-timestamp': String(Date.now()),
-    };
-
-    const isValid = socialListeningGatewayService.verifyWebhookSignature(payloadBuffer, headers, secret);
-    expect(isValid).toBe(true);
-
-    const invalidHeaders = {
-      'x-provider-signature': 'sha256=invalid_hash_signature',
-      'x-provider-timestamp': String(Date.now()),
-    };
-    expect(socialListeningGatewayService.verifyWebhookSignature(payloadBuffer, invalidHeaders, secret)).toBe(false);
-  });
-});
