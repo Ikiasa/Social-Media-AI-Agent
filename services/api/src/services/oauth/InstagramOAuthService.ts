@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { AuthorizationError, ValidationError } from '../../../../../packages/core/src/errors';
 import { currentConfig, EnvironmentType } from '../../config/env';
+import { createOAuthNonceStore, OAuthNonceStore } from './OAuthNonceStore';
 
 export interface OAuthStatePayload {
   workspaceId: string;
@@ -14,7 +15,11 @@ export interface OAuthStatePayload {
 
 export class InstagramOAuthService {
   private static instance: InstagramOAuthService;
-  private usedNonces: Set<string> = new Set();
+  private nonceStore: OAuthNonceStore;
+
+  constructor(nonceStore: OAuthNonceStore = createOAuthNonceStore()) {
+    this.nonceStore = nonceStore;
+  }
 
   public static getInstance(): InstagramOAuthService {
     if (!InstagramOAuthService.instance) {
@@ -56,11 +61,11 @@ export class InstagramOAuthService {
   /**
    * Validate state token: check signature, replay window (5-min), nonce uniqueness, environment, and workspace/user binding
    */
-  verifyOAuthState(
+  async verifyOAuthState(
     stateToken: string,
     expectedWorkspaceId: string,
     expectedUserId: string
-  ): OAuthStatePayload {
+  ): Promise<OAuthStatePayload> {
     if (!stateToken || !stateToken.includes('.')) {
       throw new AuthorizationError('INVALID_OAUTH_STATE: Malformed state token.');
     }
@@ -71,7 +76,12 @@ export class InstagramOAuthService {
       .update(payloadBase64)
       .digest('hex');
 
-    if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) {
+    const signatureBuffer = Buffer.from(signature);
+    const expectedSignatureBuffer = Buffer.from(expectedSignature);
+    if (
+      signatureBuffer.length !== expectedSignatureBuffer.length ||
+      !crypto.timingSafeEqual(signatureBuffer, expectedSignatureBuffer)
+    ) {
       throw new AuthorizationError('INVALID_OAUTH_STATE: Signature verification failed.');
     }
 
@@ -83,7 +93,8 @@ export class InstagramOAuthService {
     }
 
     // 1. Expiration Check
-    if (Date.now() > payload.expiresAt) {
+    const now = Date.now();
+    if (now > payload.expiresAt) {
       throw new AuthorizationError('EXPIRED_OAUTH_STATE: OAuth state token has expired (5-minute replay window exceeded).');
     }
 
@@ -99,13 +110,19 @@ export class InstagramOAuthService {
       throw new AuthorizationError('CROSS_TENANT_OAUTH_REJECTION: State token does not match active workspace or user context.');
     }
 
-    // 4. Single-Use Nonce Replay Check
-    if (this.usedNonces.has(payload.nonce)) {
-      throw new AuthorizationError('REUSED_OAUTH_STATE: Single-use OAuth nonce has already been redeemed.');
+    // 4. Atomic, TTL-bound, single-use nonce redemption. Redis SET NX makes
+    // this safe across multiple API instances in staging/production.
+    const ttlMs = payload.expiresAt - now;
+    let redeemed: boolean;
+    try {
+      redeemed = await this.nonceStore.consume(payload.nonce, ttlMs);
+    } catch (_err) {
+      throw new AuthorizationError('OAUTH_NONCE_STORE_UNAVAILABLE: OAuth callback could not be safely redeemed.');
     }
 
-    // Mark nonce as redeemed
-    this.usedNonces.add(payload.nonce);
+    if (!redeemed) {
+      throw new AuthorizationError('REUSED_OAUTH_STATE: Single-use OAuth nonce has already been redeemed.');
+    }
 
     return payload;
   }
@@ -136,8 +153,8 @@ export class InstagramOAuthService {
     };
   }
 
-  public resetNonces(): void {
-    this.usedNonces.clear();
+  public async resetNonces(): Promise<void> {
+    await this.nonceStore.resetForTests?.();
   }
 }
 
