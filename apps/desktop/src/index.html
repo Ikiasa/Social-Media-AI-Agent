@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Riona Social Media AI Agent Desktop Client</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+    
+    .top-bar {
+      height: 48px;
+      background: #1e293b;
+      border-bottom: 1px solid #334155;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    
+    .app-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 15px;
+      letter-spacing: 0.3px;
+    }
+
+    .badge {
+      background: rgba(225, 48, 108, 0.2);
+      color: #f472b6;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 12px;
+      border: 1px solid rgba(225, 48, 108, 0.4);
+    }
+    
+    .actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .btn {
+      background: #334155;
+      color: #f8fafc;
+      border: none;
+      padding: 7px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s ease;
+    }
+
+    .btn:hover {
+      background: #475569;
+    }
+
+    .btn-ramme {
+      background: linear-gradient(135deg, #e1306c, #c13584, #833ab4);
+      box-shadow: 0 2px 8px rgba(225, 48, 108, 0.3);
+    }
+
+    .btn-ramme:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(225, 48, 108, 0.5);
+    }
+
+    .btn-ramme.active {
+      outline: 2px solid #f472b6;
+    }
+
+    .main-layout {
+      flex: 1;
+      display: flex;
+      width: 100%;
+      height: calc(100vh - 48px);
+      overflow: hidden;
+    }
+
+    .portal-view {
+      flex: 1;
+      height: 100%;
+      border: none;
+    }
+
+    .ramme-view-container {
+      width: 420px;
+      height: 100%;
+      background: #000000;
+      border-left: 2px solid #334155;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .ramme-view-container.collapsed {
+      width: 0px;
+      border-left: none;
+      display: none;
+    }
+
+    .ramme-header {
+      height: 36px;
+      background: #121212;
+      border-bottom: 1px solid #262626;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      font-size: 11px;
+      color: #94a3b8;
+      font-weight: 600;
+    }
+
+    .ramme-webview {
+      width: 100%;
+      height: calc(100% - 36px);
+      border: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="top-bar">
+    <div class="app-brand">
+      <span>🌸 Riona AI Agent Desktop</span>
+      <span class="badge">Ramme Integrated</span>
+    </div>
+    <div class="actions">
+      <button class="btn btn-ramme active" id="toggle-ramme-btn" onclick="toggleRammeView()">
+        📷 Ramme Instagram View
+      </button>
+      <button class="btn" onclick="reloadAll()">
+        🔄 Refresh All
+      </button>
+    </div>
+  </div>
+
+  <div class="main-layout">
+    <webview
+      id="portal-webview"
+      class="portal-view"
+      src="http://localhost:3000"
+    ></webview>
+
+    <div class="ramme-view-container" id="ramme-container">
+      <div class="ramme-header">
+        <span>INSTAGRAM MOBILE (RAMME FRAME)</span>
+        <span>iPhone OS 16.6</span>
+      </div>
+      <webview
+        id="ramme-webview"
+        class="ramme-webview"
+        src="https://www.instagram.com"
+        partition="persist:instagram"
+        useragent="Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"
+      ></webview>
+    </div>
+  </div>
+
+  <script>
+    let rammeVisible = true;
+
+    function toggleRammeView() {
+      const container = document.getElementById('ramme-container');
+      const btn = document.getElementById('toggle-ramme-btn');
+      rammeVisible = !rammeVisible;
+      
+      if (rammeVisible) {
+        container.classList.remove('collapsed');
+        btn.classList.add('active');
+      } else {
+        container.classList.add('collapsed');
+        btn.classList.remove('active');
+      }
+    }
+
+    function reloadAll() {
+      document.getElementById('portal-webview').reload();
+      document.getElementById('ramme-webview').reload();
+    }
+
+    // Handle dom ready for Ramme webview CSS injection
+    document.addEventListener('DOMContentLoaded', () => {
+      const rammeWebview = document.getElementById('ramme-webview');
+      rammeWebview.addEventListener('dom-ready', () => {
+        rammeWebview.insertCSS(`
+          body { background-color: #000 !important; color: #fff !important; }
+          div[role="dialog"] button:contains("Get App"),
+          a[href*="itunes.apple.com"], a[href*="play.google.com"] { display: none !important; }
+        `);
+      });
+    });
+  </script>
+</body>
+</html>

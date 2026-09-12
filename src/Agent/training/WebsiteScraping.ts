@@ -88,11 +88,5 @@ async function scrapeAllRoutes(baseUrl: string): Promise<void> {
 }
 
 // Example usage
-const baseUrl = 'https://davidtsx.vercel.app';
-scrapeAllRoutes(baseUrl)
-    .then(() => {
-        console.log('Scraping completed.');
-    })
-    .catch(error => {
-        console.error('Error:', error);
-    });
+// const baseUrl = 'https://davidtsx.vercel.app';
+// scrapeAllRoutes(baseUrl);

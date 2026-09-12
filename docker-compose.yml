@@ -1,0 +1,110 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: riona-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: riona
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - riona-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: riona-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - riona-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  riona-crewai:
+    build:
+      context: ./apps/crewai
+      dockerfile: Dockerfile
+    container_name: riona-crewai
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      RIONA_API_URL: http://riona-api:3001
+      CREWAI_SERVICE_PORT: 8000
+      LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-dev-internal-key-123456789}
+      RIONA_KNOWLEDGE_STORAGE_PATH: /app/data/knowledge
+    volumes:
+      - crewai_knowledge_data:/app/data
+    networks:
+      - riona-network
+    depends_on:
+      - mongodb
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  riona-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: riona-api
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 3001
+      MONGODB_URI: mongodb://mongodb:27017/riona
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      CREWAI_SERVICE_URL: http://riona-crewai:8000
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-dev-internal-key-123456789}
+    networks:
+      - riona-network
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  riona-web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    container_name: riona-web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+    networks:
+      - riona-network
+    depends_on:
+      - riona-api
+
+networks:
+  riona-network:
+    driver: bridge
+
+volumes:
+  mongodb_data:
+  crewai_knowledge_data:

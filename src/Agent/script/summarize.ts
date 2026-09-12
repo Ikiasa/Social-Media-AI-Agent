@@ -159,11 +159,11 @@ export async function generateTrainingPrompt(transcript: string, prompt: string 
                 await new Promise(resolve => setTimeout(resolve, 5000));
                 return generateTrainingPrompt(transcript, prompt);
             } else {
-                logger.error("Error generating training prompt:", error.message);
+                logger.error("Error generating training prompt:", { error: error.message });
                 return `An error occurred: ${error.message}`;
             }
         } else {
-            logger.error("An unknown error occurred:", error);
+            logger.error("An unknown error occurred:", { error: String(error) });
             return "An unknown error occurred.";
         }
     }

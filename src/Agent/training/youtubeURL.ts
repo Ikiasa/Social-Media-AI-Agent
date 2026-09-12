@@ -74,11 +74,11 @@ export async function Train_Agent_with_Youtube_URL(url: string) {
         console.log("Training source generated : Title" , source)
         return source;
     } catch (error) {
-        logger.error('Error in Train_Agent_with_Youtube_URL:', error);
+        logger.error('Error in Train_Agent_with_Youtube_URL:', { error: error instanceof Error ? error.message : String(error) });
         // Return an error message or handle it accordingly
         return { error: error instanceof Error ? error.message : `Error in Train_Agent_with_Youtube_URL: ${error}` };
     }
 }
 
-const url = 'https://youtu.be/jSQ6Mru88y4?si=viP_FOYSD1AeVcZ9'
-Train_Agent_with_Youtube_URL(url)
+// const url = 'https://youtu.be/jSQ6Mru88y4?si=viP_FOYSD1AeVcZ9'
+// Train_Agent_with_Youtube_URL(url)

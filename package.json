@@ -3,10 +3,14 @@
   "version": "1.0.0",
   "main": "src/index.ts",
   "scripts": {
-    "start": "tsc && node build/index.js",
-    "train-model": "tsc && node build/Agent/training/Model.js",
-    "train:link": "tsc && node build/Agent/training/WebsiteScraping.js",
-    "train:audio": "tsc && node build/Agent/training/Audio.js"
+    "build": "tsc",
+    "test": "vitest run",
+    "start": "tsc && node build/src/app.js",
+    "build:desktop": "cd apps/desktop && npm run build",
+    "start:desktop": "cd apps/desktop && npm start",
+    "train-model": "tsc && node build/src/Agent/training/Model.js",
+    "train:link": "tsc && node build/src/Agent/training/WebsiteScraping.js",
+    "train:audio": "tsc && node build/src/Agent/training/Audio.js"
   },
   "keywords": [],
   "author": "",
@@ -15,6 +19,7 @@
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
     "axios": "^1.7.9",
+    "bullmq": "^6.3.4",
     "cookie-parser": "^1.4.7",
     "cron": "^3.5.0",
     "csv-parser": "^3.1.0",
@@ -23,6 +28,7 @@
     "express": "^4.21.2",
     "helmet": "^8.0.0",
     "instagram-private-api": "^1.46.1",
+    "ioredis": "^6.0.0",
     "jsdom": "^26.0.0",
     "mammoth": "^1.9.0",
     "moment": "^2.30.1",
@@ -43,7 +49,8 @@
     "user-agents": "^1.1.416",
     "winston": "^3.17.0",
     "winston-daily-rotate-file": "^5.0.0",
-    "youtube-transcript": "^1.2.1"
+    "youtube-transcript": "^1.2.1",
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.8",
@@ -54,6 +61,7 @@
     "@types/puppeteer": "^5.4.7",
     "@types/request": "^2.48.12",
     "@types/textract": "^2.4.5",
-    "@types/user-agents": "^1.0.4"
+    "@types/user-agents": "^1.0.4",
+    "vitest": "^4.1.11"
   }
 }

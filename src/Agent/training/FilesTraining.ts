@@ -1,4 +1,5 @@
-import pdfParse from 'pdf-parse';
+// @ts-ignore
+import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 import mammoth from 'mammoth';
 import textract from 'textract';
 import csvParser from 'csv-parser';
@@ -59,5 +60,5 @@ async function testParse() {
     }
 }
 
-// Execute the test function
-testParse();
+// Execute test function manually if needed:
+// testParse();
